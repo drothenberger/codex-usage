@@ -32,6 +32,7 @@ internal static class Program
             HistoryForecastUsesReportedDuration();
             HistoryForecastLearnsSingleActiveHourAndPausesOffHours();
             HistoryScheduleTreatsUnchangedLongGapsAsFlat();
+            HistoryScheduleIgnoresOccasionalHours();
             HistoryForecastSpreadsRoundedUsageAcrossElapsedWorkdays();
             HistoryForecastFallsBackWhenScheduleCannotExplainWindow();
             HistoryFormUsesReportedWindowLabel();
@@ -574,6 +575,48 @@ internal static class Program
         Equal(10, schedule!.ActiveHours.Single(), "flat overnight gap active hour");
         Equal(true, schedule.OffHours.Contains(0), "flat overnight gap marks midnight off");
         Equal(true, schedule.OffHours.Contains(6), "flat overnight gap marks early morning off");
+    }
+
+    private static void HistoryScheduleIgnoresOccasionalHours()
+    {
+        var historyStart = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        var samples = new List<UsageHistorySample>();
+        var available = 100d;
+        for (var hour = 0; hour <= 20 * 24; hour++)
+        {
+            var recordedAt = historyStart.AddHours(hour);
+            var day = hour / 24;
+            var consumed = recordedAt.Hour switch
+            {
+                >= 10 and <= 12 => true,
+                2 => day == 5,
+                22 => day is 3 or 9 or 15,
+                _ => false,
+            };
+            if (hour > 0 && consumed)
+            {
+                available -= 0.1;
+            }
+
+            samples.Add(new UsageHistorySample(
+                recordedAt,
+                available,
+                null,
+                historyStart.AddDays(30),
+                null,
+                TimeSpan.FromDays(30),
+                null));
+        }
+
+        var schedule = UsageHistoryAnalysis.InferActivitySchedule(
+            samples,
+            UsageWindowKind.Primary,
+            TimeZoneInfo.Utc);
+
+        NotNull(schedule, "occasional-hour activity schedule");
+        Equal(true, schedule!.OffHours.Contains(2), "single late-night session stays off");
+        Equal(true, schedule.ActiveHours.Contains(22), "recurring evening hour becomes active");
+        Equal(4, schedule.ActiveHours.Count, "occasional-hour active clock hour count");
     }
 
     private static void HistoryForecastFallsBackWhenScheduleCannotExplainWindow()

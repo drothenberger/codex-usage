@@ -202,6 +202,7 @@ public static class UsageHistoryAnalysis
 
     private const double MinimumConsumedPercent = 0.01d;
     private const double MinimumObservedHoursPerClockHour = 0.25d;
+    private const double MinimumActiveDayFraction = 0.1d;
 
     private static readonly TimeSpan MaximumScheduleSampleGap = TimeSpan.FromMinutes(75);
 
@@ -329,7 +330,8 @@ public static class UsageHistoryAnalysis
         var zone = timeZone ?? TimeZoneInfo.Local;
         var ordered = samples.OrderBy(sample => sample.RecordedAt).ToArray();
         var observedHours = new double[24];
-        var activeHours = new bool[24];
+        var observedHoursByDay = new Dictionary<(DateOnly Day, int Hour), double>();
+        var activeDayHours = new HashSet<(DateOnly Day, int Hour)>();
 
         for (var index = 1; index < ordered.Length; index++)
         {
@@ -357,17 +359,41 @@ public static class UsageHistoryAnalysis
                     previous.RecordedAt,
                     current.RecordedAt,
                     zone,
-                    (hour, duration) =>
+                    (local, duration) =>
                     {
-                        observedHours[hour] += duration.TotalHours;
+                        observedHours[local.Hour] += duration.TotalHours;
+                        var key = (DateOnly.FromDateTime(local), local.Hour);
+                        observedHoursByDay[key] = observedHoursByDay.GetValueOrDefault(key) + duration.TotalHours;
                     });
             }
 
             if (consumed)
             {
-                activeHours[TimeZoneInfo.ConvertTime(current.RecordedAt, zone).Hour] = true;
+                var local = TimeZoneInfo.ConvertTime(current.RecordedAt, zone).DateTime;
+                activeDayHours.Add((DateOnly.FromDateTime(local), local.Hour));
             }
         }
+
+        // An hour is active only when consumption recurs there on a meaningful share of the
+        // days it was observed, so a single unusual late night does not mark it active forever.
+        var observedDays = new int[24];
+        var activeDays = new int[24];
+        foreach (var dayHour in observedHoursByDay
+            .Where(entry => entry.Value >= MinimumObservedHoursPerClockHour)
+            .Select(entry => entry.Key)
+            .Union(activeDayHours))
+        {
+            observedDays[dayHour.Hour]++;
+            if (activeDayHours.Contains(dayHour))
+            {
+                activeDays[dayHour.Hour]++;
+            }
+        }
+
+        var activeHours = Enumerable.Range(0, 24)
+            .Select(hour => activeDays[hour] > 0
+                && activeDays[hour] >= MinimumActiveDayFraction * observedDays[hour])
+            .ToArray();
 
         if (observedHours.Any(hours => hours < MinimumObservedHoursPerClockHour)
             || !activeHours.Any(active => active)
@@ -404,7 +430,7 @@ public static class UsageHistoryAnalysis
         DateTimeOffset start,
         DateTimeOffset end,
         TimeZoneInfo timeZone,
-        Action<int, TimeSpan> accumulator)
+        Action<DateTime, TimeSpan> accumulator)
     {
         var cursor = start;
         while (cursor < end)
@@ -417,7 +443,7 @@ public static class UsageHistoryAnalysis
                 segmentEnd = end;
             }
 
-            accumulator(local.Hour, segmentEnd - cursor);
+            accumulator(local.DateTime, segmentEnd - cursor);
             cursor = segmentEnd;
         }
     }
