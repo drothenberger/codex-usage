@@ -204,6 +204,7 @@ public static class UsageHistoryAnalysis
     private const double MinimumObservedHoursPerClockHour = 0.25d;
 
     private static readonly TimeSpan MaximumScheduleSampleGap = TimeSpan.FromMinutes(75);
+    private const double HistoricalPaceWindowFraction = 1d / 7d;
 
     public static IReadOnlyList<UsageRestoreEvent> DetectRestoreEvents(
         IEnumerable<UsageHistorySample> samples)
@@ -280,7 +281,25 @@ public static class UsageHistoryAnalysis
             return null;
         }
 
+        // Early in a window a single busy session dominates the observed pace. When earlier
+        // history covers at least one full window, blend in its pace as prior evidence worth
+        // one seventh of this window's active time; current-window consumption outweighs it
+        // as the window progresses.
         var ratePerHour = consumedPercent / effectiveElapsed.TotalHours;
+        var historicalRate = HistoricalConsumptionRate(
+            ordered,
+            window,
+            duration.Value,
+            windowStartedAt,
+            activitySchedule);
+        if (historicalRate is { } priorRate)
+        {
+            var priorHours = (activitySchedule?.GetActiveDuration(windowStartedAt, resetsAt.Value)
+                ?? duration.Value).TotalHours * HistoricalPaceWindowFraction;
+            ratePerHour = (consumedPercent + (priorRate * priorHours))
+                / (effectiveElapsed.TotalHours + priorHours);
+        }
+
         var remainingActiveHours = availablePercent / ratePerHour;
         if (!double.IsFinite(remainingActiveHours))
         {
@@ -379,6 +398,37 @@ public static class UsageHistoryAnalysis
         return new UsageActivitySchedule(
             Enumerable.Range(0, 24).Where(hour => activeHours[hour]),
             zone);
+    }
+
+    private static double? HistoricalConsumptionRate(
+        IReadOnlyList<UsageHistorySample> ordered,
+        UsageWindowKind window,
+        TimeSpan duration,
+        DateTimeOffset windowStartedAt,
+        UsageActivitySchedule? activitySchedule)
+    {
+        var history = ordered
+            .Where(sample => sample.RecordedAt <= windowStartedAt
+                && sample.GetDuration(window) == duration
+                && sample.GetAvailablePercent(window) is not null)
+            .ToArray();
+        if (history.Length < 2 || history[^1].RecordedAt - history[0].RecordedAt < duration)
+        {
+            return null;
+        }
+
+        var consumedPercent = 0d;
+        for (var index = 1; index < history.Length; index++)
+        {
+            // Increases are resets; only decreases represent consumption.
+            var previous = Math.Clamp(history[index - 1].GetAvailablePercent(window)!.Value, 0d, 100d);
+            var current = Math.Clamp(history[index].GetAvailablePercent(window)!.Value, 0d, 100d);
+            consumedPercent += Math.Max(0d, previous - current);
+        }
+
+        var elapsed = activitySchedule?.GetActiveDuration(history[0].RecordedAt, history[^1].RecordedAt)
+            ?? history[^1].RecordedAt - history[0].RecordedAt;
+        return elapsed > TimeSpan.Zero ? consumedPercent / elapsed.TotalHours : null;
     }
 
     private static void AddRestoreEvent(

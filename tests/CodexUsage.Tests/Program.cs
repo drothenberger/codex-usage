@@ -34,6 +34,7 @@ internal static class Program
             HistoryScheduleTreatsUnchangedLongGapsAsFlat();
             HistoryForecastSpreadsRoundedUsageAcrossElapsedWorkdays();
             HistoryForecastFallsBackWhenScheduleCannotExplainWindow();
+            HistoryForecastBlendsHistoricalPaceEarlyInWindow();
             HistoryFormUsesReportedWindowLabel();
             HistoryFormShowsLearnedOffHoursAndToggle();
             HistoryStoreCompactsAndReloadsSamples();
@@ -607,6 +608,39 @@ internal static class Program
         NotNull(forecast, "schedule mismatch wall-clock forecast");
         Equal<UsageActivitySchedule?>(null, forecast!.ActivitySchedule, "schedule mismatch uses fallback");
         Equal(10d, forecast.ConsumedPercentPerHour, "schedule mismatch fallback rate");
+    }
+
+    private static void HistoryForecastBlendsHistoricalPaceEarlyInWindow()
+    {
+        var historyStart = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        var windowStart = historyStart.AddDays(14);
+        var resetAt = windowStart.AddDays(7);
+
+        // Two prior weeks sampled every two hours consume 84% over 336 hours: 0.25% per hour.
+        var samples = Enumerable.Range(0, 169)
+            .Select(index => new UsageHistorySample(
+                historyStart.AddHours(index * 2),
+                100 - (index * 0.5d),
+                null,
+                windowStart,
+                null,
+                TimeSpan.FromDays(7),
+                null))
+            .ToList();
+
+        // A busy start to the current window: 22% in four hours.
+        samples.Add(new UsageHistorySample(
+            windowStart.AddHours(4), 78, null, resetAt, null, TimeSpan.FromDays(7), null));
+
+        var forecast = UsageHistoryAnalysis.ForecastDepletion(
+            samples,
+            UsageWindowKind.Primary,
+            TimeZoneInfo.Utc);
+
+        NotNull(forecast, "historical pace forecast");
+        Equal<UsageActivitySchedule?>(null, forecast!.ActivitySchedule, "historical pace wall-clock fallback");
+        Equal(1d, forecast.ConsumedPercentPerHour, "historical pace worth one day of evidence");
+        Equal(windowStart.AddHours(82), forecast.DepletesAt, "historical pace depletion time");
     }
 
     private static void HistoryFormUsesReportedWindowLabel()
