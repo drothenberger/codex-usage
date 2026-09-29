@@ -14,6 +14,8 @@ namespace CodexUsage.Tests;
 internal static class Program
 {
     private const uint WmDpiChanged = 0x02E0;
+    private const uint WmDpiChangedBeforeParent = 0x02E2;
+    private const uint WmDpiChangedAfterParent = 0x02E3;
     private static int _assertions;
 
     [STAThread]
@@ -142,7 +144,32 @@ internal static class Program
             bounds.Top + Scale(bounds.Height, newDpi, oldDpi));
         var packedDpi = new IntPtr(newDpi | (newDpi << 16));
 
+        // Mirror the per-monitor v2 sequence Windows sends on a real monitor change:
+        // children update their DeviceDpi before the parent rescales, then finish after.
+        var children = Descendants(form).Where(control => control.IsHandleCreated).ToArray();
+        foreach (var child in children)
+        {
+            SendMessage(child.Handle, WmDpiChangedBeforeParent, packedDpi, IntPtr.Zero);
+        }
+
         SendMessage(form.Handle, WmDpiChanged, packedDpi, ref suggestedBounds);
+
+        foreach (var child in children.Reverse())
+        {
+            SendMessage(child.Handle, WmDpiChangedAfterParent, IntPtr.Zero, IntPtr.Zero);
+        }
+    }
+
+    private static IEnumerable<Control> Descendants(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            yield return child;
+            foreach (var descendant in Descendants(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 
     private static void AssertPopupLayout(PopupForm form, int expectedDpi, string state)
@@ -175,6 +202,7 @@ internal static class Program
             $"history minimum size {state}");
 
         var chart = form.Controls.OfType<UsageHistoryChart>().Single();
+        Equal(expectedDpi, chart.DeviceDpi, $"history chart device DPI {state}");
         var margin = form.LogicalToDeviceUnits(24);
         Equal(
             new Rectangle(
@@ -234,6 +262,13 @@ internal static class Program
         uint message,
         IntPtr wParam,
         ref NativeRectangle lParam);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(
+        IntPtr windowHandle,
+        uint message,
+        IntPtr wParam,
+        IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct NativeRectangle(int Left, int Top, int Right, int Bottom);
