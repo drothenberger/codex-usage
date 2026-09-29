@@ -40,6 +40,7 @@ internal static class Program
             HistoryStoreUpgradesLegacySamplesWithDuration();
             TokenUsageReaderAggregatesPeriodResetAndToday();
             PopupLayoutSurvivesDpiChange();
+            SettingsLayoutSurvivesDpiChange();
             HistoryLayoutSurvivesDpiChange();
 
             if (args.Contains("--live", StringComparer.OrdinalIgnoreCase))
@@ -129,6 +130,48 @@ internal static class Program
         Equal(expectedRestoredSize, form.Size, "history size after minimum-size DPI restore");
         AssertHistoryLayout(form, originalDpi, "after DPI restore");
         AssertHistoryChartRenders(form, "after DPI restore");
+    }
+
+    private static void SettingsLayoutSurvivesDpiChange()
+    {
+        using var form = new SettingsForm(new AppSettings { Theme = ThemeMode.Dark }, launchAtStartup: false);
+        form.StartPosition = FormStartPosition.Manual;
+        form.Location = new Point(-10_000, -10_000);
+        form.Show();
+        Application.DoEvents();
+
+        var originalDpi = form.DeviceDpi;
+        var changedDpi = originalDpi == 144 ? 192 : 144;
+        AssertSettingsLayout(form, originalDpi, "at initial DPI");
+
+        ChangeDpi(form, changedDpi);
+        AssertSettingsLayout(form, changedDpi, "after DPI change");
+
+        ChangeDpi(form, originalDpi);
+        AssertSettingsLayout(form, originalDpi, "after DPI restore");
+        form.Hide();
+    }
+
+    private static void AssertSettingsLayout(SettingsForm form, int expectedDpi, string state)
+    {
+        Equal(expectedDpi, form.DeviceDpi, $"settings device DPI {state}");
+        Equal(
+            new Size(form.LogicalToDeviceUnits(430), form.LogicalToDeviceUnits(322)),
+            form.ClientSize,
+            $"settings client size {state}");
+
+        foreach (var control in form.Controls.Cast<Control>().Where(control => control is Label or CheckBox))
+        {
+            var preferred = control.GetPreferredSize(Size.Empty);
+            Equal(
+                true,
+                preferred.Width <= control.Width && preferred.Height <= control.Height,
+                $"settings '{control.Text}' fits {preferred} in {control.Size} {state}");
+            Equal(
+                true,
+                form.ClientRectangle.Contains(control.Bounds),
+                $"settings '{control.Text}' inside client area {state}");
+        }
     }
 
     private static void ChangeDpi(Form form, int newDpi)
