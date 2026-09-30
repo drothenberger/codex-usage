@@ -52,9 +52,9 @@ public sealed class UsageMeterControl : Control
         graphics.DrawPath(border, path);
 
         var innerLeft = 14f * scale;
-        using var titleFont = new Font(Font.FontFamily, 9.25f, FontStyle.Bold);
-        using var percentFont = new Font(Font.FontFamily, 12.5f, FontStyle.Bold);
-        using var detailFont = new Font(Font.FontFamily, 8.25f, FontStyle.Regular);
+        using var titleFont = DpiFonts.Create(Font.FontFamily, 9.25f, FontStyle.Bold, DeviceDpi);
+        using var percentFont = DpiFonts.Create(Font.FontFamily, 12.5f, FontStyle.Bold, DeviceDpi);
+        using var detailFont = DpiFonts.Create(Font.FontFamily, 8.25f, FontStyle.Regular, DeviceDpi);
         using var textBrush = new SolidBrush(_palette.Text);
         using var secondaryBrush = new SolidBrush(_palette.SecondaryText);
 

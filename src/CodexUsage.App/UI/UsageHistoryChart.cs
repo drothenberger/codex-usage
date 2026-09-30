@@ -238,7 +238,7 @@ public sealed class UsageHistoryChart : Control
 
     private void DrawLegend(Graphics graphics)
     {
-        using var legendFont = new Font(Font.FontFamily, 8.5f, FontStyle.Regular);
+        using var legendFont = DpiFonts.Create(Font.FontFamily, 8.5f, FontStyle.Regular, DeviceDpi);
         using var textBrush = new SolidBrush(_palette.SecondaryText);
         var primaryColor = _palette.Accent;
         var secondaryColor = _palette.IsDark
@@ -312,7 +312,7 @@ public sealed class UsageHistoryChart : Control
 
     private void DrawGrid(Graphics graphics, TimelineInterval timeline)
     {
-        using var axisFont = new Font(Font.FontFamily, 8f, FontStyle.Regular);
+        using var axisFont = DpiFonts.Create(Font.FontFamily, 8f, FontStyle.Regular, DeviceDpi);
         using var labelBrush = new SolidBrush(_palette.MutedText);
         using var gridPen = new Pen(
             Color.FromArgb(_palette.IsDark ? 72 : 52, _palette.Border),
@@ -441,8 +441,8 @@ public sealed class UsageHistoryChart : Control
             EndCap = LineCap.Round,
         };
         using var endpointBrush = new SolidBrush(_palette.Danger);
-        using var labelFont = new Font(Font.FontFamily, 8f, FontStyle.Bold);
-        using var hintFont = new Font(Font.FontFamily, 7.5f, FontStyle.Regular);
+        using var labelFont = DpiFonts.Create(Font.FontFamily, 8f, FontStyle.Bold, DeviceDpi);
+        using var hintFont = DpiFonts.Create(Font.FontFamily, 7.5f, FontStyle.Regular, DeviceDpi);
         using var labelBrush = new SolidBrush(_palette.Danger);
         using var hintBrush = new SolidBrush(_palette.SecondaryText);
         using var labelBackground = new SolidBrush(_palette.Card);
@@ -595,7 +595,7 @@ public sealed class UsageHistoryChart : Control
 
     private void DrawEmptyState(Graphics graphics, string message)
     {
-        using var font = new Font(Font.FontFamily, 9f, FontStyle.Regular);
+        using var font = DpiFonts.Create(Font.FontFamily, 9f, FontStyle.Regular, DeviceDpi);
         using var brush = new SolidBrush(_palette.MutedText);
         using var format = new StringFormat
         {

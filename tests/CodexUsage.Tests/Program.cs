@@ -41,6 +41,7 @@ internal static class Program
             TokenUsageReaderAggregatesPeriodResetAndToday();
             PopupLayoutSurvivesDpiChange();
             HistoryLayoutSurvivesDpiChange();
+            OwnerDrawnFontsIgnoreGraphicsDpi();
 
             if (args.Contains("--live", StringComparer.OrdinalIgnoreCase))
             {
@@ -129,6 +130,26 @@ internal static class Program
         Equal(expectedRestoredSize, form.Size, "history size after minimum-size DPI restore");
         AssertHistoryLayout(form, originalDpi, "after DPI restore");
         AssertHistoryChartRenders(form, "after DPI restore");
+    }
+
+    private static void OwnerDrawnFontsIgnoreGraphicsDpi()
+    {
+        // A process started at 175% keeps a 168 DPI Graphics after an RDP reconnect at 100%.
+        using var font = DpiFonts.Create(FontFamily.GenericSansSerif, 12.5f, FontStyle.Bold, 96);
+        using var monitorBitmap = new Bitmap(1, 1);
+        using var systemBitmap = new Bitmap(1, 1);
+        monitorBitmap.SetResolution(96, 96);
+        systemBitmap.SetResolution(168, 168);
+        using var monitorGraphics = Graphics.FromImage(monitorBitmap);
+        using var systemGraphics = Graphics.FromImage(systemBitmap);
+
+        const string text = "99% available";
+        var monitorWidth = (int)Math.Round(monitorGraphics.MeasureString(text, font).Width);
+        var systemWidth = (int)Math.Round(systemGraphics.MeasureString(text, font).Width);
+        Equal(monitorWidth, systemWidth, "owner-drawn text width at mismatched Graphics DPI");
+
+        using var scaledFont = DpiFonts.Create(FontFamily.GenericSansSerif, 12.5f, FontStyle.Bold, 192);
+        Equal(2 * font.Size, scaledFont.Size, "owner-drawn font pixel size at 200% DPI");
     }
 
     private static void ChangeDpi(Form form, int newDpi)
